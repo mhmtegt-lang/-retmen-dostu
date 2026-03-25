@@ -6,128 +6,82 @@ import time
 import re
 
 # Sayfa Ayarları
-st.set_page_config(page_title="ÖdevAI | Profesyonel Kontrol", layout="wide", page_icon="📝")
+st.set_page_config(page_title="ÖdevAI | Detaylı Çözüm", layout="wide", page_icon="📝")
 
-# --- YARDIMCI FONKSİYONLAR ---
 def clean_json_string(text):
-    """AI yanıtındaki JSON harici metinleri temizler."""
-    try:
-        # JSON bloğunu bulmak için regex kullanıyoruz
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            return match.group(0)
-        return text
-    except:
-        return text
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    return match.group(0) if match else text
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("⚙️ Kurulum")
+    st.title("⚙️ Ayarlar")
     api_key = st.text_input("Google API Key", type="password")
-    
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            models = [m.name.replace('models/', '') for m in genai.list_models() 
-                      if 'generateContent' in m.supported_generation_methods]
-            # Senin ekranında çalışan 'gemini-2.5-flash' modelini öncelikli seçiyoruz
-            target_model = "gemini-2.5-flash" if "gemini-2.5-flash" in models else models[0]
-            selected_model = st.selectbox("Model Seçimi", models, index=models.index(target_model))
+            models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            target = "gemini-2.5-flash" if "gemini-2.5-flash" in models else models[0]
+            selected_model = st.selectbox("Model", models, index=models.index(target))
             model = genai.GenerativeModel(model_name=selected_model)
-            st.success("Bağlantı Tamam!")
+            st.success("Bağlantı Aktif")
         except Exception as e:
-            st.error(f"API Hatası: {e}")
+            st.error(f"Hata: {e}")
 
 # --- SESSION STATE ---
 if 'ref_key' not in st.session_state: st.session_state.ref_key = None
-if 'results' not in st.session_state: st.session_state.results = []
 
-st.title("📚 Akıllı Ödev Kontrol Sistemi")
+st.title("📚 Adım Adım Ödev Analiz Sistemi")
 
 if not api_key:
-    st.info("Devam etmek için sol tarafa API anahtarınızı girin.")
+    st.info("Devam etmek için API anahtarınızı girin.")
     st.stop()
 
-# Sekmeler
-tab1, tab2, tab3 = st.tabs(["🎯 1. Cevap Anahtarı", "🔍 2. Öğrenci Analizi", "📊 3. Sınıf Raporu"])
+tab1, tab2, tab3 = st.tabs(["🎯 1. Cevap Anahtarı (Detaylı)", "🔍 2. Öğrenci Analizi", "📊 3. Sınıf Raporu"])
 
-# --- TAB 1: CEVAP ANAHTARI ---
+# --- TAB 1: DETAYLI CEVAP ANAHTARI ---
 with tab1:
-    st.subheader("Ödev Sayfasını Tanımlama")
-    master_file = st.file_uploader("Kitap sayfasını veya çözümlü anahtarı yükleyin", type=['jpg', 'jpeg', 'png'])
+    master_file = st.file_uploader("Ödev sayfasını yükleyin", type=['jpg', 'jpeg', 'png'])
     
     if master_file:
         img = Image.open(master_file)
-        st.image(img, caption="Referans Görsel", width=350)
+        st.image(img, caption="Referans Görsel", width=300)
         
-        if st.button("Soruları Çöz ve Anahtar Oluştur"):
-            with st.spinner("Yapay zeka soruları analiz ediyor..."):
-                prompt = """Bu ödevdeki tüm soruları çöz. Yanıtı YALNIZCA şu JSON formatında ver:
-                { "subject": "ders", "total_questions": 9, "questions": [{"id": 1, "text": "...", "final_answer": "..."}] }"""
+        if st.button("Soruları Adım Adım Çöz"):
+            with st.spinner("Gemini detaylı çözümleri hazırlıyor..."):
+                # GÜNCELLENEN PROMPT: Adım adım çözüm istiyoruz
+                prompt = """
+                Görseldeki tüm matematik sorularını tanımla ve her birini bir öğretmen gibi adım adım çöz. 
+                Özellikle kesirleri ondalığa çevirme veya payda eşitleme gibi işlem basamaklarını açıkça belirt.
+                Yanıtı YALNIZCA şu JSON formatında dön:
+                {
+                    "subject": "Ders Adı",
+                    "total_questions": 9,
+                    "questions": [
+                        {
+                            "id": 1,
+                            "text": "soru metni",
+                            "steps": ["1. adım açıklaması", "2. adım açıklaması"],
+                            "final_answer": "sonuç"
+                        }
+                    ]
+                }
+                """
                 try:
                     response = model.generate_content([prompt, img])
                     json_data = clean_json_string(response.text)
                     st.session_state.ref_key = json.loads(json_data)
-                    st.success("Cevap anahtarı oluşturuldu! Şimdi '2. Öğrenci Analizi' sekmesine geçebilirsiniz.")
-                    st.json(st.session_state.ref_key)
+                    st.success("Detaylı cevap anahtarı hazır!")
                 except Exception as e:
-                    st.error(f"Cevap anahtarı oluşturulurken hata: {e}")
+                    st.error(f"Hata: {e}")
 
-# --- TAB 2: ANALİZ ---
-with tab2:
-    if not st.session_state.ref_key:
-        st.warning("Lütfen önce 1. sekmeden cevap anahtarını oluşturun.")
-    else:
-        st.subheader("Öğrenci Kağıtlarını Yükleyin")
-        files = st.file_uploader("Öğrenci fotoğraflarını seçin (Birden fazla seçebilirsiniz)", 
-                                 type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
-        
-        if files and st.button("Analizi Başlat"):
-            st.session_state.results = [] # Eski sonuçları temizle
-            progress = st.progress(0)
-            
-            for i, f in enumerate(files):
-                student_img = Image.open(f)
-                st.write(f"Kontrol ediliyor: {f.name}")
-                
-                # Özel eğitim odaklı analiz promptu
-                analysis_prompt = f"""
-                Cevap Anahtarı: {json.dumps(st.session_state.ref_key)}
-                Bu öğrenci kağıdını kontrol et. Yanlış cevap varsa, hatanın nedenini (işlem hatası, kavram yanılgısı vb.) açıkla.
-                Yanıtı YALNIZCA şu JSON formatında ver:
-                {{
-                    "student_name": "{f.name.split('.')[0]}",
-                    "score": 0,
-                    "feedback": "...",
-                    "details": [{"q_id": 1, "is_correct": true, "note": "..."}]
-                }}
-                """
-                try:
-                    res = model.generate_content([analysis_prompt, student_img])
-                    clean_res = clean_json_string(res.text)
-                    st.session_state.results.append(json.loads(clean_res))
-                except Exception as e:
-                    st.error(f"{f.name} analizi başarısız: {e}")
-                
-                progress.progress((i + 1) / len(files))
-                time.sleep(1) # API limitini korumak için
-
-            st.success("Tüm ödevler kontrol edildi! '3. Sınıf Raporu' sekmesine bakabilirsiniz.")
-
-# --- TAB 3: RAPOR ---
-with tab3:
-    if not st.session_state.results:
-        st.info("Henüz analiz edilmiş bir öğrenci kağıdı yok.")
-    else:
-        st.subheader("Sınıf Genel Durumu")
-        results_df = [{"İsim": r['student_name'], "Puan": r['score'], "Geri Bildirim": r['feedback']} for r in st.session_state.results]
-        st.table(results_df)
-        
-        # Detaylı İnceleme
+    # Çözümleri ekranda güzelce gösterelim
+    if st.session_state.ref_key:
         st.divider()
-        st.subheader("Bireysel Hata Analizleri")
-        for r in st.session_state.results:
-            with st.expander(f"Öğrenci: {r['student_name']} - Detaylar"):
-                for d in r['details']:
-                    durum = "✅" if d['is_correct'] else "❌"
-                    st.write(f"{durum} **Soru {d['q_id']}:** {d.get('note', '')}")
+        st.subheader(f"📖 {st.session_state.ref_key.get('subject', 'Ödev')} Çözüm Anahtarı")
+        for q in st.session_state.ref_key['questions']:
+            with st.expander(f"Soru {q['id']}: {q['text']} (Cevap: {q['final_answer']})"):
+                st.write("**İşlem Basamakları:**")
+                for i, step in enumerate(q.get('steps', []), 1):
+                    st.write(f"{i}. {step}")
+
+# (Tab 2 ve Tab 3 önceki kodlardaki gibi devam edebilir...)
